@@ -1,0 +1,57 @@
+# Terraform files
+.terraform/
+.terraform.lock.hcl
+terraform.tfstate
+terraform.tfstate.backup
+*.tfplan
+*.tfstate
+
+# AWS/SSH Keys (NEVER commit private keys!)
+*.pem
+*.key
+*.p12
+*.pfx
+
+# Environment files
+.env
+.env.local
+.env.production
+.env.staging
+
+# Logs
+*.log
+logs/
+tmp/
+
+# OS files
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# Archive files
+*.zip
+*.tar.gz
+*.rar
+
+# Build artifacts
+target/
+build/
+dist/
+*.jar
+*.war
+
+# Java/Maven specific
+java-hello-world-with-maven-master-main/
+jb-hello-world-maven-selenium-main.zip
+java-hello-world-with-maven-master-main.zip
+apache-tomcat-10.1.46.tar.gz
+
+# Backup files
+*.backup
+main-complex.tf.backup
+
+# Temporary files
+*~
+*.tmp
+*.temp

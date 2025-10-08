@@ -1,0 +1,236 @@
+version: '3.8'
+
+networks:
+  cicd-network:
+    driver: bridge
+
+volumes:
+  gitlab-config:
+  gitlab-logs:
+  gitlab-data:
+  sonarqube-data:
+  sonarqube-logs:
+  sonarqube-extensions:
+  postgresql-data:
+  tomcat-webapps:
+  tomcat-logs:
+
+services:
+  # PostgreSQL Database for SonarQube
+  postgresql:
+    image: postgres:13
+    container_name: postgresql
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: sonar
+      POSTGRES_PASSWORD: sonar123
+      POSTGRES_DB: sonarqube
+    volumes:
+      - postgresql-data:/var/lib/postgresql/data
+    networks:
+      - cicd-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U sonar"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+
+  # GitLab CE
+  gitlab:
+    image: gitlab/gitlab-ce:16.5.1-ce.0
+    container_name: gitlab
+    restart: unless-stopped
+    hostname: gitlab.local
+    environment:
+      GITLAB_OMNIBUS_CONFIG: |
+        external_url 'http://gitlab.local:8083'
+        gitlab_rails['gitlab_shell_ssh_port'] = 2222
+        gitlab_rails['time_zone'] = 'UTC'
+        
+        # Performance tuning for t3.2xlarge
+        unicorn['worker_processes'] = 4
+        sidekiq['max_concurrency'] = 25
+        postgresql['max_connections'] = 200
+        postgresql['shared_buffers'] = "512MB"
+        
+        # Disable built-in PostgreSQL (using external)
+        postgresql['enable'] = true
+        
+        # Enable Container Registry
+        registry_external_url 'http://gitlab.local:5050'
+        gitlab_rails['registry_enabled'] = true
+        
+        # GitLab Pages
+        pages_external_url "http://pages.gitlab.local"
+        gitlab_pages['enable'] = true
+        
+        # Monitoring
+        prometheus_monitoring['enable'] = true
+        grafana['enable'] = false
+        
+        # Backup configuration
+        gitlab_rails['backup_keep_time'] = 604800
+        gitlab_rails['backup_path'] = '/var/opt/gitlab/backups'
+    ports:
+      - "8083:8083"    # GitLab web interface
+      - "2222:22"      # GitLab SSH
+      - "5050:5050"    # Container Registry
+    volumes:
+      - gitlab-config:/etc/gitlab
+      - gitlab-logs:/var/log/gitlab
+      - gitlab-data:/var/opt/gitlab
+    networks:
+      - cicd-network
+    shm_size: '256m'
+    healthcheck:
+      test: ["CMD", "/opt/gitlab/bin/gitlab-healthcheck", "--fail", "--max-time", "10"]
+      interval: 60s
+      timeout: 30s
+      retries: 5
+      start_period: 200s
+
+  # SonarQube Community Edition
+  sonarqube:
+    image: sonarqube:10.2-community
+    container_name: sonarqube
+    restart: unless-stopped
+    environment:
+      SONAR_JDBC_URL: jdbc:postgresql://postgresql:5432/sonarqube
+      SONAR_JDBC_USERNAME: sonar
+      SONAR_JDBC_PASSWORD: sonar123
+      SONAR_ES_BOOTSTRAP_CHECKS_DISABLE: true
+    ports:
+      - "9000:9000"
+    volumes:
+      - sonarqube-data:/opt/sonarqube/data
+      - sonarqube-logs:/opt/sonarqube/logs
+      - sonarqube-extensions:/opt/sonarqube/extensions
+    networks:
+      - cicd-network
+    depends_on:
+      postgresql:
+        condition: service_healthy
+    ulimits:
+      memlock:
+        soft: -1
+        hard: -1
+      nofile:
+        soft: 65536
+        hard: 65536
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:9000/api/system/status"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+
+  # Apache Tomcat
+  tomcat:
+    image: tomcat:10.1-jdk11
+    container_name: tomcat
+    restart: unless-stopped
+    environment:
+      CATALINA_OPTS: "-Xms512m -Xmx1024m -server -XX:+UseParallelGC"
+      JAVA_OPTS: "-Djava.awt.headless=true -Djava.security.egd=file:/dev/./urandom"
+    ports:
+      - "8080:8080"
+      - "8009:8009"    # AJP connector
+    volumes:
+      - tomcat-webapps:/usr/local/tomcat/webapps
+      - tomcat-logs:/usr/local/tomcat/logs
+      - ./tomcat-config/server.xml:/usr/local/tomcat/conf/server.xml:ro
+      - ./tomcat-config/tomcat-users.xml:/usr/local/tomcat/conf/tomcat-users.xml:ro
+    networks:
+      - cicd-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # ELK Stack - Elasticsearch
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:8.10.4
+    container_name: elasticsearch
+    restart: unless-stopped
+    environment:
+      - node.name=elasticsearch
+      - cluster.name=cicd-elk-cluster
+      - discovery.type=single-node
+      - bootstrap.memory_lock=true
+      - "ES_JAVA_OPTS=-Xms1g -Xmx1g"
+      - ELASTIC_PASSWORD=changeme123
+      - xpack.security.enabled=true
+      - xpack.security.http.ssl.enabled=false
+      - xpack.security.transport.ssl.enabled=false
+    ulimits:
+      memlock:
+        soft: -1
+        hard: -1
+    volumes:
+      - ./elk-config/elasticsearch:/usr/share/elasticsearch/data
+    ports:
+      - "9200:9200"
+      - "9300:9300"
+    networks:
+      - cicd-network
+    healthcheck:
+      test: ["CMD-SHELL", "curl -u elastic:changeme123 -f http://localhost:9200/_cluster/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+
+  # ELK Stack - Logstash
+  logstash:
+    image: docker.elastic.co/logstash/logstash:8.10.4
+    container_name: logstash
+    restart: unless-stopped
+    environment:
+      - "LS_JAVA_OPTS=-Xmx512m -Xms512m"
+    volumes:
+      - ./elk-config/logstash/logstash.yml:/usr/share/logstash/config/logstash.yml:ro
+      - ./elk-config/logstash/pipelines.yml:/usr/share/logstash/config/pipelines.yml:ro
+      - ./elk-config/logstash/conf.d:/usr/share/logstash/pipeline:ro
+    ports:
+      - "5044:5044"    # Beats input
+      - "9600:9600"    # Logstash monitoring
+    networks:
+      - cicd-network
+    depends_on:
+      elasticsearch:
+        condition: service_healthy
+
+  # ELK Stack - Kibana
+  kibana:
+    image: docker.elastic.co/kibana/kibana:8.10.4
+    container_name: kibana
+    restart: unless-stopped
+    environment:
+      - ELASTICSEARCH_HOSTS=http://elasticsearch:9200
+      - ELASTICSEARCH_USERNAME=elastic
+      - ELASTICSEARCH_PASSWORD=changeme123
+      - SERVER_HOST=0.0.0.0
+      - SERVER_PORT=5601
+    ports:
+      - "5601:5601"
+    networks:
+      - cicd-network
+    depends_on:
+      elasticsearch:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:5601/api/status || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5'
+services:
+  gitlab:
+    image: gitlab/gitlab-ce:latest
+    ports: ['8081:80', '2222:22']
+    
+  sonarqube:
+    image: sonarqube:community
+    ports: ['9000:9000']
+    
+  tomcat:
+    image: tomcat:10-jdk11
+    ports: ['8080:8080']
