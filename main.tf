@@ -1,4 +1,17 @@
-# Configure AWS Provider
+# Variables
+variable "instance_name" {
+  description = "Name for the EC2 instance"
+  type        = string
+  default     = "devops-challenge-instance"
+}
+
+variable "key_name" {
+  description = "AWS key pair name"
+  type        = string
+  default     = "Pair06"
+}
+
+# AWS Provider
 terraform {
   required_providers {
     aws = {
@@ -8,39 +21,35 @@ terraform {
   }
 }
 
-# Configure the AWS Provider
 provider "aws" {
-  region = var.aws_region
-}
-
-# Variables
-variable "aws_region" {
-  description = "AWS region"
-  type        = string
-  default     = "us-west-1"
-}
-
-variable "instance_name" {
-  description = "Name of the EC2 instance"
-  type        = string
-  default     = "ELK-Terraform"
-}
-
-variable "key_name" {
-  description = "Name of the AWS key pair"
-  type        = string
-  default     = "Pair06"
+  region = "us-east-1"
 }
 
 # Create Security Group
 resource "aws_security_group" "instance_sg" {
-  name        = "ELK-Terraform-security-group-v4"
-  description = "Security group for ELK stack and CI/CD tools"
+  name        = "devops-challenge-sg"
+  description      = "Allow inbound traffic for CI/CD tools"
 
   # SSH access
   ingress {
     from_port   = 22
     to_port     = 22
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  # Elasticsearch
+  ingress {
+    from_port   = 9200
+    to_port     = 9200
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  # Kibana - Updated to use port 5061
+  ingress {
+    from_port   = 5061
+    to_port     = 5061
     protocol    = "tcp"
     cidr_blocks = ["0.0.0.0/0"]
   }
@@ -155,188 +164,115 @@ resource "aws_instance" "main_instance" {
     ]
   }
 
-  # Run the complete installation directly (no file transfers needed)
+  # Transfer installation scripts to the instance
+  provisioner "file" {
+    connection {
+      type        = "ssh"
+      user        = "ec2-user"
+      private_key = file("./Pair06.pem")
+      host        = self.public_ip
+      timeout     = "10m"
+    }
+
+    source      = "./sequential-install.sh"
+    destination = "/tmp/sequential-install.sh"
+  }
+
+  provisioner "file" {
+    connection {
+      type        = "ssh"
+      user        = "ec2-user"
+      private_key = file("./Pair06.pem")
+      host        = self.public_ip
+      timeout     = "10m"
+    }
+
+    source      = "./install-elk.sh"
+    destination = "/tmp/install-elk.sh"
+  }
+
+  provisioner "file" {
+    connection {
+      type        = "ssh"
+      user        = "ec2-user"
+      private_key = file("./Pair06.pem")
+      host        = self.public_ip
+      timeout     = "10m"
+    }
+
+    source      = "./install-gitlab.sh"
+    destination = "/tmp/install-gitlab.sh"
+  }
+
+  provisioner "file" {
+    connection {
+      type        = "ssh"
+      user        = "ec2-user"
+      private_key = file("./Pair06.pem")
+      host        = self.public_ip
+      timeout     = "10m"
+    }
+
+    source      = "./install-sonarqube.sh"
+    destination = "/tmp/install-sonarqube.sh"
+  }
+
+  provisioner "file" {
+    connection {
+      type        = "ssh"
+      user        = "ec2-user"
+      private_key = file("./Pair06.pem")
+      host        = self.public_ip
+      timeout     = "10m"
+    }
+
+    source      = "./install-tomcat.sh"
+    destination = "/tmp/install-tomcat.sh"
+  }
+
+  provisioner "file" {
+    connection {
+      type        = "ssh"
+      user        = "ec2-user"
+      private_key = file("./Pair06.pem")
+      host        = self.public_ip
+      timeout     = "10m"
+    }
+
+    source      = "./deploy-react-app.sh"
+    destination = "/tmp/deploy-react-app.sh"
+  }
+
+  # Transfer the entire React app directory
+  provisioner "file" {
+    connection {
+      type        = "ssh"
+      user        = "ec2-user"
+      private_key = file("./Pair06.pem")
+      host        = self.public_ip
+      timeout     = "10m"
+    }
+
+    source      = "./group6-react-app/"
+    destination = "/tmp/group6-react-app/"
+  }
+
+  # Run the sequential installation using your robust scripts
   provisioner "remote-exec" {
     connection {
       type        = "ssh"
       user        = "ec2-user"
       private_key = file("./Pair06.pem")
       host        = self.public_ip
-      timeout     = "45m"
+      timeout     = "60m"
     }
 
     inline = [
-      "echo '=== Starting Complete CI/CD Stack Deployment ==='",
+      "echo '=== Starting Automated CI/CD Stack Deployment ==='",
+      "echo 'Using robust sequential installation scripts with GitLab reconfigure'",
       "echo 'Starting at: $(date)'",
-      "log() { echo \"[$(date '+%Y-%m-%d %H:%M:%S')] \\$1\"; }",
-      "log 'System ready. Starting deployment...'",
-      "log '=== STEP 1/5: Installing ELK Stack ==='",
-      "mkdir -p /home/ec2-user/elk-stack && cd /home/ec2-user/elk-stack",
-      "mkdir -p elk-config",
-      "cat > docker-compose.yml << 'ELKEOF'",
-      "version: '3.8'",
-      "services:",
-      "  elasticsearch:",
-      "    image: docker.elastic.co/elasticsearch/elasticsearch:8.10.4",
-      "    container_name: elasticsearch",
-      "    environment:",
-      "      - node.name=elasticsearch",
-      "      - cluster.name=docker-cluster",
-      "      - discovery.type=single-node",
-      "      - ES_JAVA_OPTS=-Xms1g -Xmx1g",
-      "      - xpack.security.enabled=false",
-      "    ports:",
-      "      - 9200:9200",
-      "    volumes:",
-      "      - elasticsearch_data:/usr/share/elasticsearch/data",
-      "    networks:",
-      "      - elk_network",
-      "  kibana:",
-      "    image: docker.elastic.co/kibana/kibana:8.10.4",
-      "    container_name: kibana",
-      "    ports:",
-      "      - 5061:5601",
-      "    environment:",
-      "      ELASTICSEARCH_HOSTS: http://elasticsearch:9200",
-      "    networks:",
-      "      - elk_network",
-      "    depends_on:",
-      "      - elasticsearch",
-      "volumes:",
-      "  elasticsearch_data:",
-      "networks:",
-      "  elk_network:",
-      "    driver: bridge",
-      "ELKEOF",
-      "log 'Starting ELK Stack...'",
-      "docker-compose up -d",
-      "sleep 60",
-      "log 'ELK Stack started'",
-      "log '=== STEP 2/5: Installing GitLab ==='",
-      "mkdir -p /home/ec2-user/gitlab && cd /home/ec2-user/gitlab",
-      "cat > docker-compose.yml << 'GITLABEOF'",
-      "version: '3.8'",
-      "services:",
-      "  postgres:",
-      "    image: postgres:13",
-      "    environment:",
-      "      POSTGRES_DB: gitlabhq_production",
-      "      POSTGRES_USER: gitlab",
-      "      POSTGRES_PASSWORD: gitlab_password",
-      "    volumes:",
-      "      - postgres_data:/var/lib/postgresql/data",
-      "  gitlab:",
-      "    image: gitlab/gitlab-ce:16.5.1-ce.0",
-      "    environment:",
-      "      GITLAB_OMNIBUS_CONFIG: |",
-      "        external_url 'http://localhost:8081'",
-      "        gitlab_rails['initial_root_password'] = 'admin123456'",
-      "        postgresql['enable'] = false",
-      "        gitlab_rails['db_host'] = 'postgres'",
-      "        gitlab_rails['db_password'] = 'gitlab_password'",
-      "    ports:",
-      "      - 8081:80",
-      "    volumes:",
-      "      - gitlab_data:/var/opt/gitlab",
-      "    depends_on:",
-      "      - postgres",
-      "volumes:",
-      "  postgres_data:",
-      "  gitlab_data:",
-      "GITLABEOF",
-      "log 'Starting GitLab (this takes 10-15 minutes)...'",
-      "docker-compose up -d",
-      "sleep 300",
-      "log 'GitLab started'",
-      "log '=== STEP 3/5: Installing SonarQube ==='",
-      "mkdir -p /home/ec2-user/sonarqube && cd /home/ec2-user/sonarqube",
-      "cat > docker-compose.yml << 'SONAREOF'",
-      "version: '3.8'",
-      "services:",
-      "  sonarqube:",
-      "    image: sonarqube:10.2-community",
-      "    ports:",
-      "      - 9000:9000",
-      "    volumes:",
-      "      - sonarqube_data:/opt/sonarqube/data",
-      "volumes:",
-      "  sonarqube_data:",
-      "SONAREOF",
-      "log 'Starting SonarQube...'",
-      "docker-compose up -d",
-      "sleep 120",
-      "log 'SonarQube started'",
-      "log '=== STEP 4/5: Installing Tomcat ==='",
-      "mkdir -p /home/ec2-user/tomcat && cd /home/ec2-user/tomcat",
-      "cat > docker-compose.yml << 'TOMCATEOF'",
-      "version: '3.8'",
-      "services:",
-      "  tomcat:",
-      "    image: tomcat:10.1-jdk11",
-      "    ports:",
-      "      - 8080:8080",
-      "    volumes:",
-      "      - tomcat_webapps:/usr/local/tomcat/webapps",
-      "volumes:",
-      "  tomcat_webapps:",
-      "TOMCATEOF",
-      "log 'Starting Tomcat...'",
-      "docker-compose up -d",
-      "sleep 30",
-      "log 'Tomcat started'",
-      "log '=== STEP 5/5: Deploying React Application ==='",
-      "mkdir -p /home/ec2-user/react-app && cd /home/ec2-user/react-app",
-      "mkdir -p public src",
-      "cat > package.json << 'REACTEOF'",
-      "{",
-      "  \"name\": \"group6-react-app\",",
-      "  \"version\": \"1.0.0\",",
-      "  \"dependencies\": {",
-      "    \"react\": \"^18.2.0\",",
-      "    \"react-dom\": \"^18.2.0\",",
-      "    \"react-scripts\": \"5.0.1\"",
-      "  },",
-      "  \"scripts\": {",
-      "    \"build\": \"react-scripts build\"",
-      "  }",
-      "}",
-      "REACTEOF",
-      "cat > public/index.html << 'HTMLEOF'",
-      "<!DOCTYPE html>",
-      "<html><head><title>Group 6 React App</title></head>",
-      "<body><div id=\"root\"></div></body></html>",
-      "HTMLEOF",
-      "cat > src/index.js << 'JSEOF'",
-      "import React from 'react';",
-      "import ReactDOM from 'react-dom/client';",
-      "const App = () => (",
-      "  React.createElement('div', {style: {textAlign: 'center', padding: '50px'}}, [",
-      "    React.createElement('h1', {key: 'h1'}, 'Group 6 React Application'),",
-      "    React.createElement('p', {key: 'p'}, 'Successfully deployed via CI/CD Pipeline!')",
-      "  ])",
-      ");",
-      "const root = ReactDOM.createRoot(document.getElementById('root'));",
-      "root.render(React.createElement(App));",
-      "JSEOF",
-      "log 'Building React application...'",
-      "npm install --silent",
-      "npm run build",
-      "cd build",
-      "jar -cvf ../group6-react-app.war * > /dev/null 2>&1",
-      "cd ..",
-      "docker cp group6-react-app.war tomcat:/usr/local/tomcat/webapps/",
-      "sleep 20",
-      "log 'React application deployed'",
-      "PUBLIC_IP=\\$(curl -s http://169.254.169.254/latest/meta-data/public-ipv4)",
-      "log '=== DEPLOYMENT COMPLETE ==='",
-      "echo 'YOUR REACT APPLICATION:'",
-      "echo \"  - React App: http://\\$PUBLIC_IP:8080/group6-react-app/\"",
-      "echo 'CI/CD TOOLS:'",
-      "echo \"  - GitLab: http://\\$PUBLIC_IP:8081\"",
-      "echo \"  - SonarQube: http://\\$PUBLIC_IP:9000\"",
-      "echo \"  - Tomcat: http://\\$PUBLIC_IP:8080\"",
-      "echo \"  - Kibana: http://\\$PUBLIC_IP:5061\"",
-      "log 'All services deployed successfully!'"
+      "chmod +x /tmp/*.sh",
+      "sudo /tmp/sequential-install.sh"
     ]
   }
 }
@@ -372,4 +308,16 @@ output "elastic_ip" {
 output "ssh_connection" {
   description = "SSH connection command"
   value       = "ssh -i ${var.key_name}.pem ec2-user@${aws_eip.instance_eip.public_ip}"
+}
+
+output "application_urls" {
+  description = "URLs for accessing deployed applications"
+  value = {
+    react_app    = "http://${aws_eip.instance_eip.public_ip}:8080/group6-react-app/"
+    gitlab       = "http://${aws_eip.instance_eip.public_ip}:8081"
+    sonarqube    = "http://${aws_eip.instance_eip.public_ip}:9000"
+    tomcat       = "http://${aws_eip.instance_eip.public_ip}:8080"
+    kibana       = "http://${aws_eip.instance_eip.public_ip}:5061"
+    elasticsearch = "http://${aws_eip.instance_eip.public_ip}:9200"
+  }
 }
