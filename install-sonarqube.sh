@@ -157,8 +157,18 @@ fi
 log "Checking SonarQube final status..."
 docker-compose ps
 
+# Run automatic configuration
+log "Starting automatic SonarQube configuration..."
+if [ -f "/tmp/configure-sonarqube.sh" ]; then
+    chmod +x /tmp/configure-sonarqube.sh
+    /tmp/configure-sonarqube.sh
+else
+    warn "Automatic configuration script not found, skipping..."
+fi
+
 echo ""
 echo "=== SonarQube Installation Complete ==="
 echo "SonarQube: http://$(curl -s http://169.254.169.254/latest/meta-data/public-ipv4):9000"
-echo "Default credentials: admin / admin"
+echo "Admin credentials: admin / admin123 (or admin/admin if auto-config failed)"
+echo "Project: Group6-React-App already created and configured"
 echo ""

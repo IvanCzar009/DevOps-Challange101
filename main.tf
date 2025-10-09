@@ -2,13 +2,27 @@
 variable "instance_name" {
   description = "Name for the EC2 instance"
   type        = string
-  default     = "devops-challenge-instance"
+  default     = "devops-challenge101-instance"
 }
 
 variable "key_name" {
   description = "AWS key pair name"
   type        = string
   default     = "Pair06"
+}
+
+variable "sonarqube_password" {
+  description = "SonarQube admin password (leave empty for auto-generated)"
+  type        = string
+  default     = ""
+  sensitive   = true
+}
+
+variable "jenkins_password" {
+  description = "Jenkins admin password (leave empty for default)"
+  type        = string
+  default     = "admin123456"
+  sensitive   = true
 }
 
 # AWS Provider
@@ -22,12 +36,12 @@ terraform {
 }
 
 provider "aws" {
-  region = "us-east-1"
+  region = "us-west-1"
 }
 
 # Create Security Group
 resource "aws_security_group" "instance_sg" {
-  name        = "devops-challenge-sg"
+  name        = "ELK-challenge101-sg"
   description      = "Allow inbound traffic for CI/CD tools"
 
   # SSH access
@@ -78,18 +92,26 @@ resource "aws_security_group" "instance_sg" {
     cidr_blocks = ["0.0.0.0/0"]
   }
 
-  # GitLab
-  ingress {
-    from_port   = 8081
-    to_port     = 8081
-    protocol    = "tcp"
-    cidr_blocks = ["0.0.0.0/0"]
-  }
-
   # SonarQube
   ingress {
     from_port   = 9000
     to_port     = 9000
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  # React App
+  ingress {
+    from_port   = 3000
+    to_port     = 3000
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  # Logstash API
+  ingress {
+    from_port   = 9600
+    to_port     = 9600
     protocol    = "tcp"
     cidr_blocks = ["0.0.0.0/0"]
   }
@@ -109,7 +131,7 @@ resource "aws_security_group" "instance_sg" {
 
 # Create EC2 Instance
 resource "aws_instance" "main_instance" {
-  ami                    = "ami-038bba9a164eb3dc1"
+  ami                    = "ami-0945610b37068d87a"
   instance_type          = "t3.2xlarge"
   key_name              = var.key_name
   security_groups       = [aws_security_group.instance_sg.name]
@@ -174,8 +196,8 @@ resource "aws_instance" "main_instance" {
       timeout     = "10m"
     }
 
-    source      = "./sequential-install.sh"
-    destination = "/tmp/sequential-install.sh"
+    source      = "./sequential-install-jenkins.sh"
+    destination = "/tmp/sequential-install-jenkins.sh"
   }
 
   provisioner "file" {
@@ -200,8 +222,8 @@ resource "aws_instance" "main_instance" {
       timeout     = "10m"
     }
 
-    source      = "./install-gitlab.sh"
-    destination = "/tmp/install-gitlab.sh"
+    source      = "./install-jenkins.sh"
+    destination = "/tmp/install-jenkins.sh"
   }
 
   provisioner "file" {
@@ -239,11 +261,10 @@ resource "aws_instance" "main_instance" {
       timeout     = "10m"
     }
 
-    source      = "./deploy-react-app.sh"
-    destination = "/tmp/deploy-react-app.sh"
+    source      = "./install-react-app.sh"
+    destination = "/tmp/install-react-app.sh"
   }
 
-  # Transfer the entire React app directory
   provisioner "file" {
     connection {
       type        = "ssh"
@@ -253,11 +274,79 @@ resource "aws_instance" "main_instance" {
       timeout     = "10m"
     }
 
-    source      = "./group6-react-app/"
-    destination = "/tmp/group6-react-app/"
+    source      = "./deploy-react-app.sh"
+    destination = "/tmp/deploy-react-app.sh"
   }
 
-  # Run the sequential installation using your robust scripts
+  # Transfer your group6-react-app
+  provisioner "file" {
+    connection {
+      type        = "ssh"
+      user        = "ec2-user"
+      private_key = file("./Pair06.pem")
+      host        = self.public_ip
+      timeout     = "10m"
+    }
+
+    source      = "./group6-react-app"
+    destination = "/tmp/"
+  }
+
+  # Transfer configuration scripts
+  provisioner "file" {
+    connection {
+      type        = "ssh"
+      user        = "ec2-user"
+      private_key = file("./Pair06.pem")
+      host        = self.public_ip
+      timeout     = "10m"
+    }
+
+    source      = "./configure-sonarqube.sh"
+    destination = "/tmp/configure-sonarqube.sh"
+  }
+
+  # Transfer automation scripts for Jenkins and SonarQube
+  provisioner "file" {
+    connection {
+      type        = "ssh"
+      user        = "ec2-user"
+      private_key = file("./Pair06.pem")
+      host        = self.public_ip
+      timeout     = "10m"
+    }
+
+    source      = "./automate-jenkins-pipeline.sh"
+    destination = "/tmp/automate-jenkins-pipeline.sh"  
+  }
+
+  provisioner "file" {
+    connection {
+      type        = "ssh"
+      user        = "ec2-user"
+      private_key = file("./Pair06.pem")
+      host        = self.public_ip
+      timeout     = "10m"
+    }
+
+    source      = "./automate-sonarqube-project.sh"
+    destination = "/tmp/automate-sonarqube-project.sh"
+  }
+
+  provisioner "file" {
+    connection {
+      type        = "ssh"
+      user        = "ec2-user"
+      private_key = file("./Pair06.pem")
+      host        = self.public_ip
+      timeout     = "10m"
+    }
+
+    source      = "./monitor-jenkins-build.sh"
+    destination = "/tmp/monitor-jenkins-build.sh"
+  }
+
+  # Run the sequential installation using Jenkins-based solution
   provisioner "remote-exec" {
     connection {
       type        = "ssh"
@@ -268,11 +357,30 @@ resource "aws_instance" "main_instance" {
     }
 
     inline = [
-      "echo '=== Starting Automated CI/CD Stack Deployment ==='",
-      "echo 'Using robust sequential installation scripts with GitLab reconfigure'",
+      "echo '=== Starting Complete CI/CD Stack Deployment ==='",
+      "echo 'Deploying: ELK Stack → Jenkins → SonarQube → Tomcat → React App'",
       "echo 'Starting at: $(date)'",
+      "echo 'This will deploy the complete working solution in one command'",
       "chmod +x /tmp/*.sh",
-      "sudo /tmp/sequential-install.sh"
+      "echo 'Scripts permissions set'",
+      "# Fix vm.max_map_count for SonarQube/Elasticsearch",
+      "echo 'vm.max_map_count=262144' | sudo tee -a /etc/sysctl.conf",
+      "sudo sysctl -p",
+      "echo 'System parameters configured'",
+      "# Run the complete Jenkins-based installation with explicit timeout",
+      "echo 'Starting sequential installation...'",
+      "timeout 3600 /tmp/sequential-install-jenkins.sh",
+      "INSTALL_EXIT_CODE=$?",
+      "if [ $INSTALL_EXIT_CODE -eq 0 ]; then",
+      "  echo '✅ Installation completed successfully'",
+      "elif [ $INSTALL_EXIT_CODE -eq 124 ]; then",
+      "  echo '⚠️ Installation timed out after 1 hour'",
+      "  exit 1",
+      "else",
+      "  echo '❌ Installation failed with exit code: $INSTALL_EXIT_CODE'",
+      "  exit $INSTALL_EXIT_CODE",
+      "fi",
+      "echo 'Provisioning completed at: $(date)'"
     ]
   }
 }
@@ -313,11 +421,49 @@ output "ssh_connection" {
 output "application_urls" {
   description = "URLs for accessing deployed applications"
   value = {
-    react_app    = "http://${aws_eip.instance_eip.public_ip}:8080/group6-react-app/"
-    gitlab       = "http://${aws_eip.instance_eip.public_ip}:8081"
-    sonarqube    = "http://${aws_eip.instance_eip.public_ip}:9000"
-    tomcat       = "http://${aws_eip.instance_eip.public_ip}:8080"
-    kibana       = "http://${aws_eip.instance_eip.public_ip}:5061"
-    elasticsearch = "http://${aws_eip.instance_eip.public_ip}:9200"
+    group6_react_app     = "http://${aws_eip.instance_eip.public_ip}:8080/group6-react-app/"
+    react_dashboard      = "http://${aws_eip.instance_eip.public_ip}:3000"
+    jenkins_dashboard    = "http://${aws_eip.instance_eip.public_ip}:8081"
+    jenkins_pipeline     = "http://${aws_eip.instance_eip.public_ip}:8081/job/group6-react-app-pipeline"
+    sonarqube_dashboard  = "http://${aws_eip.instance_eip.public_ip}:9000"
+    sonarqube_project    = "http://${aws_eip.instance_eip.public_ip}:9000/dashboard?id=group6-react-app"
+    tomcat               = "http://${aws_eip.instance_eip.public_ip}:8080"
+    kibana               = "http://${aws_eip.instance_eip.public_ip}:5061"
+    elasticsearch        = "http://${aws_eip.instance_eip.public_ip}:9200"
+    logstash             = "http://${aws_eip.instance_eip.public_ip}:9600"
+  }
+}
+
+output "service_credentials" {
+  description = "Service credentials and configuration info"
+  value = {
+    jenkins_admin          = "admin"
+    jenkins_password       = var.jenkins_password
+    jenkins_pipeline       = "group6-react-app-pipeline (auto-created)"
+    sonarqube_admin        = "admin"
+    sonarqube_note         = "Password auto-generated and saved on server"
+    sonarqube_project      = "Group6-React-App (auto-configured)"
+    tomcat_admin           = "admin"
+    tomcat_password        = "admin123"
+    credentials_location   = "SSH to server and check /home/ec2-user/sonarqube-config.txt"
+    automation_note        = "Jenkins pipeline and SonarQube project fully automated"
+  }
+  sensitive = true
+}
+
+output "credentials_access_command" {
+  description = "Command to retrieve SonarQube credentials"
+  value = "ssh -i ${var.key_name}.pem ec2-user@${aws_eip.instance_eip.public_ip} 'cat /home/ec2-user/sonarqube-config.txt'"
+  sensitive = true
+}
+
+output "jenkins_pipeline_info" {
+  description = "Jenkins pipeline access information"
+  value = {
+    pipeline_url         = "http://${aws_eip.instance_eip.public_ip}:8081/job/group6-react-app-pipeline"
+    build_trigger_url    = "http://${aws_eip.instance_eip.public_ip}:8081/job/group6-react-app-pipeline/build"
+    pipeline_name        = "group6-react-app-pipeline"
+    auto_created         = "Yes - Fully automated via Terraform"
+    features_included    = "Build, Test, SonarQube Analysis, Deploy to Tomcat, Health Check"
   }
 }
