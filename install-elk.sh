@@ -150,7 +150,7 @@ services:
     image: docker.elastic.co/kibana/kibana:8.10.4
     container_name: kibana
     ports:
-      - "5061:5601"
+      - "8443:5601"
     environment:
       ELASTICSEARCH_HOSTS: http://elasticsearch:9200
     networks:
@@ -190,8 +190,8 @@ if ! wait_for_service "http://localhost:9200/_cluster/health" "Elasticsearch" 20
 fi
 
 # Wait for Kibana to be ready
-if ! wait_for_service "http://localhost:5061/api/status" "Kibana" 15; then
-    log "WARNING: Kibana might still be starting up. Check http://localhost:5061 in a few minutes"
+if ! wait_for_service "http://localhost:8443/api/status" "Kibana" 15; then
+    log "WARNING: Kibana might still be starting up. Check http://localhost:8443 in a few minutes"
 fi
 
 # Wait for Logstash to be ready
@@ -208,6 +208,6 @@ docker-compose ps
 echo ""
 echo "=== ELK Stack Installation Complete ==="
 echo "Elasticsearch: http://$(curl -s http://169.254.169.254/latest/meta-data/public-ipv4):9200"
-echo "Kibana: http://$(curl -s http://169.254.169.254/latest/meta-data/public-ipv4):5061"
+echo "Kibana: http://$(curl -s http://169.254.169.254/latest/meta-data/public-ipv4):8443"
 echo "Logstash: http://$(curl -s http://169.254.169.254/latest/meta-data/public-ipv4):9600"
 echo ""

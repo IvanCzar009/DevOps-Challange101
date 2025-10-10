@@ -60,10 +60,10 @@ resource "aws_security_group" "instance_sg" {
     cidr_blocks = ["0.0.0.0/0"]
   }
 
-  # Kibana - Updated to use port 5061
+  # Kibana - Updated to use port 8443
   ingress {
-    from_port   = 5061
-    to_port     = 5061
+    from_port   = 8443
+    to_port     = 8443
     protocol    = "tcp"
     cidr_blocks = ["0.0.0.0/0"]
   }
@@ -135,6 +135,7 @@ resource "aws_instance" "main_instance" {
   instance_type          = "t3.2xlarge"
   key_name              = var.key_name
   security_groups       = [aws_security_group.instance_sg.name]
+  associate_public_ip_address = false  # We'll use Elastic IP instead
   user_data = base64encode(<<-EOF
     #!/bin/bash
     yum update -y
@@ -168,6 +169,37 @@ resource "aws_instance" "main_instance" {
   tags = {
     Name = var.instance_name
   }
+}
+
+# Create Elastic IP after instance is created
+resource "aws_eip" "instance_eip" {
+  domain = "vpc"
+
+  tags = {
+    Name = "${var.instance_name}-eip"
+  }
+
+  depends_on = [aws_instance.main_instance]
+}
+
+# Associate Elastic IP with instance
+resource "aws_eip_association" "instance_eip_association" {
+  instance_id   = aws_instance.main_instance.id
+  allocation_id = aws_eip.instance_eip.id
+
+  depends_on = [aws_instance.main_instance, aws_eip.instance_eip]
+}
+
+# Add provisioners to the instance after Elastic IP is ready
+resource "null_resource" "instance_provisioning" {
+  # Triggers to ensure provisioning runs when needed
+  triggers = {
+    instance_id = aws_instance.main_instance.id
+    elastic_ip  = aws_eip.instance_eip.public_ip
+  }
+
+  # Ensure this runs after Elastic IP is associated
+  depends_on = [aws_eip_association.instance_eip_association]
 
   # Wait for instance to be ready
   provisioner "remote-exec" {
@@ -175,7 +207,7 @@ resource "aws_instance" "main_instance" {
       type        = "ssh"
       user        = "ec2-user"
       private_key = file("./Pair06.pem")
-      host        = self.public_ip
+      host        = aws_eip.instance_eip.public_ip
       timeout     = "10m"
     }
 
@@ -192,7 +224,7 @@ resource "aws_instance" "main_instance" {
       type        = "ssh"
       user        = "ec2-user"
       private_key = file("./Pair06.pem")
-      host        = self.public_ip
+      host        = aws_eip.instance_eip.public_ip
       timeout     = "10m"
     }
 
@@ -205,7 +237,7 @@ resource "aws_instance" "main_instance" {
       type        = "ssh"
       user        = "ec2-user"
       private_key = file("./Pair06.pem")
-      host        = self.public_ip
+      host        = aws_eip.instance_eip.public_ip
       timeout     = "10m"
     }
 
@@ -218,7 +250,7 @@ resource "aws_instance" "main_instance" {
       type        = "ssh"
       user        = "ec2-user"
       private_key = file("./Pair06.pem")
-      host        = self.public_ip
+      host        = aws_eip.instance_eip.public_ip
       timeout     = "10m"
     }
 
@@ -231,7 +263,7 @@ resource "aws_instance" "main_instance" {
       type        = "ssh"
       user        = "ec2-user"
       private_key = file("./Pair06.pem")
-      host        = self.public_ip
+      host        = aws_eip.instance_eip.public_ip
       timeout     = "10m"
     }
 
@@ -244,7 +276,7 @@ resource "aws_instance" "main_instance" {
       type        = "ssh"
       user        = "ec2-user"
       private_key = file("./Pair06.pem")
-      host        = self.public_ip
+      host        = aws_eip.instance_eip.public_ip
       timeout     = "10m"
     }
 
@@ -257,7 +289,7 @@ resource "aws_instance" "main_instance" {
       type        = "ssh"
       user        = "ec2-user"
       private_key = file("./Pair06.pem")
-      host        = self.public_ip
+      host        = aws_eip.instance_eip.public_ip
       timeout     = "10m"
     }
 
@@ -270,7 +302,7 @@ resource "aws_instance" "main_instance" {
       type        = "ssh"
       user        = "ec2-user"
       private_key = file("./Pair06.pem")
-      host        = self.public_ip
+      host        = aws_eip.instance_eip.public_ip
       timeout     = "10m"
     }
 
@@ -284,7 +316,7 @@ resource "aws_instance" "main_instance" {
       type        = "ssh"
       user        = "ec2-user"
       private_key = file("./Pair06.pem")
-      host        = self.public_ip
+      host        = aws_eip.instance_eip.public_ip
       timeout     = "10m"
     }
 
@@ -298,7 +330,7 @@ resource "aws_instance" "main_instance" {
       type        = "ssh"
       user        = "ec2-user"
       private_key = file("./Pair06.pem")
-      host        = self.public_ip
+      host        = aws_eip.instance_eip.public_ip
       timeout     = "10m"
     }
 
@@ -312,7 +344,7 @@ resource "aws_instance" "main_instance" {
       type        = "ssh"
       user        = "ec2-user"
       private_key = file("./Pair06.pem")
-      host        = self.public_ip
+      host        = aws_eip.instance_eip.public_ip
       timeout     = "10m"
     }
 
@@ -325,7 +357,7 @@ resource "aws_instance" "main_instance" {
       type        = "ssh"
       user        = "ec2-user"
       private_key = file("./Pair06.pem")
-      host        = self.public_ip
+      host        = aws_eip.instance_eip.public_ip
       timeout     = "10m"
     }
 
@@ -338,7 +370,7 @@ resource "aws_instance" "main_instance" {
       type        = "ssh"
       user        = "ec2-user"
       private_key = file("./Pair06.pem")
-      host        = self.public_ip
+      host        = aws_eip.instance_eip.public_ip
       timeout     = "10m"
     }
 
@@ -352,7 +384,7 @@ resource "aws_instance" "main_instance" {
       type        = "ssh"
       user        = "ec2-user"
       private_key = file("./Pair06.pem")
-      host        = self.public_ip
+      host        = aws_eip.instance_eip.public_ip
       timeout     = "60m"
     }
 
@@ -383,18 +415,6 @@ resource "aws_instance" "main_instance" {
       "echo 'Provisioning completed at: $(date)'"
     ]
   }
-}
-
-# Create Elastic IP
-resource "aws_eip" "instance_eip" {
-  instance = aws_instance.main_instance.id
-  domain   = "vpc"
-
-  tags = {
-    Name = "${var.instance_name}-eip"
-  }
-
-  depends_on = [aws_instance.main_instance]
 }
 
 # Outputs
@@ -428,7 +448,7 @@ output "application_urls" {
     sonarqube_dashboard  = "http://${aws_eip.instance_eip.public_ip}:9000"
     sonarqube_project    = "http://${aws_eip.instance_eip.public_ip}:9000/dashboard?id=group6-react-app"
     tomcat               = "http://${aws_eip.instance_eip.public_ip}:8080"
-    kibana               = "http://${aws_eip.instance_eip.public_ip}:5061"
+    kibana               = "http://${aws_eip.instance_eip.public_ip}:8443"
     elasticsearch        = "http://${aws_eip.instance_eip.public_ip}:9200"
     logstash             = "http://${aws_eip.instance_eip.public_ip}:9600"
   }

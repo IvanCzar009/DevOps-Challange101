@@ -6,7 +6,7 @@ pipeline {
         APP_NAME = 'group6-react-app'
         SONAR_URL = 'http://localhost:9000'
         TOMCAT_URL = 'http://localhost:8083'
-        KIBANA_URL = 'http://localhost:5061'
+        KIBANA_URL = 'http://localhost:8443'
         PUBLIC_IP = sh(script: 'curl -s http://169.254.169.254/latest/meta-data/public-ipv4', returnStdout: true).trim()
     }
     

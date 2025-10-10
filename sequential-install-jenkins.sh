@@ -81,12 +81,30 @@ fi
 # Step 5: Deploy React Applications
 log "=== STEP 5/7: Deploying React Applications ==="
 chmod +x /tmp/deploy-react-app.sh
+
+# Run React deployment with enhanced error handling
+REACT_DEPLOYMENT_SUCCESS=false
 if /tmp/deploy-react-app.sh; then
     log "✅ React applications deployment completed successfully"
+    REACT_DEPLOYMENT_SUCCESS=true
 else
-    error "❌ React applications deployment failed"
-    exit 1
+    warn "⚠️ React deployment script reported failure, but checking actual deployment..."
+    
+    # Verify if React app is actually accessible despite script failure
+    sleep 10
+    HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:8080/group6-react-app/ 2>/dev/null)
+    if [[ "$HTTP_CODE" == "200" ]]; then
+        log "✅ React app is actually working despite script error (HTTP 200)"
+        REACT_DEPLOYMENT_SUCCESS=true
+    else
+        warn "⚠️ React app deployment needs attention (HTTP $HTTP_CODE)"
+        log "📋 Continuing with CI/CD setup - React app can be redeployed via Jenkins pipeline"
+        REACT_DEPLOYMENT_SUCCESS=false
+    fi
 fi
+
+# Export status for later use
+export REACT_DEPLOYMENT_SUCCESS
 
 # Step 6: Verify All Services Are Ready Before Automation
 log "=== STEP 6/8: Verifying All Services Are Ready ==="
