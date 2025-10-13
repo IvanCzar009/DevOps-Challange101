@@ -2,7 +2,7 @@
 variable "instance_name" {
   description = "Name for the EC2 instance"
   type        = string
-  default     = "devops-challenge101-instance"
+  default     = "ELK-challenge101-instance"
 }
 
 variable "key_name" {
@@ -32,6 +32,10 @@ terraform {
       source  = "hashicorp/aws"
       version = "~> 5.0"
     }
+    random = {
+      source  = "hashicorp/random"
+      version = "~> 3.1"
+    }
   }
 }
 
@@ -39,10 +43,15 @@ provider "aws" {
   region = "us-west-1"
 }
 
+# Generate random suffix for unique naming
+resource "random_id" "sg_suffix" {
+  byte_length = 4
+}
+
 # Create Security Group
 resource "aws_security_group" "instance_sg" {
-  name        = "ELK-challenge101-sg"
-  description      = "Allow inbound traffic for CI/CD tools"
+  name        = "ELK-${random_id.sg_suffix.hex}"
+  description = "Allow inbound traffic for CI/CD tools"
 
   # SSH access
   ingress {
@@ -104,6 +113,14 @@ resource "aws_security_group" "instance_sg" {
   ingress {
     from_port   = 3000
     to_port     = 3000
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  # Jenkins
+  ingress {
+    from_port   = 8081
+    to_port     = 8081
     protocol    = "tcp"
     cidr_blocks = ["0.0.0.0/0"]
   }
@@ -214,7 +231,13 @@ resource "null_resource" "instance_provisioning" {
     inline = [
       "echo 'Instance is ready, waiting for system initialization...'",
       "while [ ! -f /var/lib/cloud/instance/boot-finished ]; do echo '.'; sleep 2; done",
-      "echo 'Cloud-init completed, system is ready'"
+      "echo 'Cloud-init completed, system is ready'",
+      "echo 'Creating and configuring /tmp directory...'",
+      "sudo mkdir -p /tmp",
+      "sudo chmod 1777 /tmp",
+      "sudo chown root:root /tmp",
+      "ls -la /tmp",
+      "echo 'Ready for file transfers'"
     ]
   }
 
@@ -229,7 +252,7 @@ resource "null_resource" "instance_provisioning" {
     }
 
     source      = "./sequential-install-jenkins.sh"
-    destination = "/tmp/sequential-install-jenkins.sh"
+    destination = "/home/ec2-user/sequential-install-jenkins.sh"
   }
 
   provisioner "file" {
@@ -242,7 +265,7 @@ resource "null_resource" "instance_provisioning" {
     }
 
     source      = "./install-elk.sh"
-    destination = "/tmp/install-elk.sh"
+    destination = "/home/ec2-user/install-elk.sh"
   }
 
   provisioner "file" {
@@ -255,7 +278,7 @@ resource "null_resource" "instance_provisioning" {
     }
 
     source      = "./install-jenkins.sh"
-    destination = "/tmp/install-jenkins.sh"
+    destination = "/home/ec2-user/install-jenkins.sh"
   }
 
   provisioner "file" {
@@ -268,7 +291,7 @@ resource "null_resource" "instance_provisioning" {
     }
 
     source      = "./install-sonarqube.sh"
-    destination = "/tmp/install-sonarqube.sh"
+    destination = "/home/ec2-user/install-sonarqube.sh"
   }
 
   provisioner "file" {
@@ -281,7 +304,7 @@ resource "null_resource" "instance_provisioning" {
     }
 
     source      = "./install-tomcat.sh"
-    destination = "/tmp/install-tomcat.sh"
+    destination = "/home/ec2-user/install-tomcat.sh"
   }
 
   provisioner "file" {
@@ -294,7 +317,7 @@ resource "null_resource" "instance_provisioning" {
     }
 
     source      = "./install-react-app.sh"
-    destination = "/tmp/install-react-app.sh"
+    destination = "/home/ec2-user/install-react-app.sh"
   }
 
   provisioner "file" {
@@ -307,7 +330,7 @@ resource "null_resource" "instance_provisioning" {
     }
 
     source      = "./deploy-react-app.sh"
-    destination = "/tmp/deploy-react-app.sh"
+    destination = "/home/ec2-user/deploy-react-app.sh"
   }
 
   # Transfer your group6-react-app
@@ -321,7 +344,7 @@ resource "null_resource" "instance_provisioning" {
     }
 
     source      = "./group6-react-app"
-    destination = "/tmp/"
+    destination = "/home/ec2-user/"
   }
 
   # Transfer configuration scripts
@@ -335,7 +358,7 @@ resource "null_resource" "instance_provisioning" {
     }
 
     source      = "./configure-sonarqube.sh"
-    destination = "/tmp/configure-sonarqube.sh"
+    destination = "/home/ec2-user/configure-sonarqube.sh"
   }
 
   # Transfer automation scripts for Jenkins and SonarQube
@@ -349,7 +372,7 @@ resource "null_resource" "instance_provisioning" {
     }
 
     source      = "./automate-jenkins-pipeline.sh"
-    destination = "/tmp/automate-jenkins-pipeline.sh"  
+    destination = "/home/ec2-user/automate-jenkins-pipeline.sh"  
   }
 
   provisioner "file" {
@@ -362,7 +385,7 @@ resource "null_resource" "instance_provisioning" {
     }
 
     source      = "./automate-sonarqube-project.sh"
-    destination = "/tmp/automate-sonarqube-project.sh"
+    destination = "/home/ec2-user/automate-sonarqube-project.sh"
   }
 
   provisioner "file" {
@@ -375,7 +398,26 @@ resource "null_resource" "instance_provisioning" {
     }
 
     source      = "./monitor-jenkins-build.sh"
-    destination = "/tmp/monitor-jenkins-build.sh"
+    destination = "/home/ec2-user/monitor-jenkins-build.sh"
+  }
+
+  # Verify all files are transferred and set permissions
+  provisioner "remote-exec" {
+    connection {
+      type        = "ssh"
+      user        = "ec2-user"
+      private_key = file("./Pair06.pem")
+      host        = aws_eip.instance_eip.public_ip
+      timeout     = "10m"
+    }
+
+    inline = [
+      "echo 'Verifying file transfers...'",
+      "ls -la /home/ec2-user/*.sh",
+      "echo 'Setting execute permissions on all scripts...'",
+      "chmod +x /home/ec2-user/*.sh",
+      "echo 'Verification complete. Files ready for execution:'"
+    ]
   }
 
   # Run the sequential installation using Jenkins-based solution
@@ -393,24 +435,44 @@ resource "null_resource" "instance_provisioning" {
       "echo 'Deploying: ELK Stack → Jenkins → SonarQube → Tomcat → React App'",
       "echo 'Starting at: $(date)'",
       "echo 'This will deploy the complete working solution in one command'",
-      "chmod +x /tmp/*.sh",
-      "echo 'Scripts permissions set'",
+      "echo 'Copying files from home directory to /tmp for script compatibility...'",
+      "sudo mkdir -p /tmp",
+      "sudo chmod 1777 /tmp",
+      "cp /home/ec2-user/*.sh /tmp/ 2>/dev/null || echo 'Some files may not have copied'",
+      "cp -r /home/ec2-user/group6-react-app /tmp/ 2>/dev/null || echo 'React app directory copy may have failed'",
+      "echo 'Converting line endings for all scripts...'",
+      "for script in /tmp/*.sh; do",
+      "  if [ -f \"$script\" ]; then",
+      "    sed -i 's/\\r$//' \"$script\"",
+      "    chmod +x \"$script\"",
+      "    echo \"Converted: $script\"",
+      "  fi",
+      "done",
+      "ls -la /tmp/*.sh || echo 'No .sh files found in /tmp'",
+      "echo 'Files copied, converted, and permissions set'",
       "# Fix vm.max_map_count for SonarQube/Elasticsearch",
       "echo 'vm.max_map_count=262144' | sudo tee -a /etc/sysctl.conf",
       "sudo sysctl -p",
       "echo 'System parameters configured'",
-      "# Run the complete Jenkins-based installation with explicit timeout",
-      "echo 'Starting sequential installation...'",
-      "timeout 3600 /tmp/sequential-install-jenkins.sh",
-      "INSTALL_EXIT_CODE=$?",
-      "if [ $INSTALL_EXIT_CODE -eq 0 ]; then",
-      "  echo '✅ Installation completed successfully'",
-      "elif [ $INSTALL_EXIT_CODE -eq 124 ]; then",
-      "  echo '⚠️ Installation timed out after 1 hour'",
-      "  exit 1",
+      "# Check if sequential-install-jenkins.sh exists",
+      "if [ -f '/tmp/sequential-install-jenkins.sh' ]; then",
+      "  echo 'sequential-install-jenkins.sh found, proceeding with installation...'",
+      "  echo 'Starting sequential installation...'",
+      "/tmp/sequential-install-jenkins.sh",
+      "  INSTALL_EXIT_CODE=$?",
+      "  if [ $INSTALL_EXIT_CODE -eq 0 ]; then",
+      "    echo '✅ Installation completed successfully'",
+      "  else",
+      "    echo '❌ Installation failed with exit code: $INSTALL_EXIT_CODE'",
+      "    exit $INSTALL_EXIT_CODE",
+      "  fi",
       "else",
-      "  echo '❌ Installation failed with exit code: $INSTALL_EXIT_CODE'",
-      "  exit $INSTALL_EXIT_CODE",
+      "  echo '❌ Error: /tmp/sequential-install-jenkins.sh not found!'",
+      "  echo 'Available files in /tmp:'",
+      "  ls -la /tmp/",
+      "  echo 'Available files in home directory:'",
+      "  ls -la /home/ec2-user/",
+      "  exit 1",
       "fi",
       "echo 'Provisioning completed at: $(date)'"
     ]
