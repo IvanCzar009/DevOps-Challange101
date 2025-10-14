@@ -55,6 +55,7 @@ resource "aws_security_group" "instance_sg" {
 
   # SSH access
   ingress {
+    description = "SSH"
     from_port   = 22
     to_port     = 22
     protocol    = "tcp"
@@ -63,6 +64,7 @@ resource "aws_security_group" "instance_sg" {
 
   # Elasticsearch
   ingress {
+    description = "Elasticsearch"
     from_port   = 9200
     to_port     = 9200
     protocol    = "tcp"
@@ -71,6 +73,7 @@ resource "aws_security_group" "instance_sg" {
 
   # Kibana - Updated to use port 8443
   ingress {
+    description = "Kibana"
     from_port   = 8443
     to_port     = 8443
     protocol    = "tcp"
@@ -79,6 +82,7 @@ resource "aws_security_group" "instance_sg" {
 
   # HTTP access
   ingress {
+    description = "HTTP"
     from_port   = 80
     to_port     = 80
     protocol    = "tcp"
@@ -87,6 +91,7 @@ resource "aws_security_group" "instance_sg" {
 
   # HTTPS access
   ingress {
+    description = "HTTPS"
     from_port   = 443
     to_port     = 443
     protocol    = "tcp"
@@ -95,6 +100,7 @@ resource "aws_security_group" "instance_sg" {
 
   # Tomcat
   ingress {
+    description = "Tomcat"
     from_port   = 8080
     to_port     = 8080
     protocol    = "tcp"
@@ -103,6 +109,7 @@ resource "aws_security_group" "instance_sg" {
 
   # SonarQube
   ingress {
+    description = "SonarQube"
     from_port   = 9000
     to_port     = 9000
     protocol    = "tcp"
@@ -111,6 +118,7 @@ resource "aws_security_group" "instance_sg" {
 
   # React App
   ingress {
+    description = "React"
     from_port   = 3000
     to_port     = 3000
     protocol    = "tcp"
@@ -119,6 +127,7 @@ resource "aws_security_group" "instance_sg" {
 
   # Jenkins
   ingress {
+    description = "Jenkins"
     from_port   = 8081
     to_port     = 8081
     protocol    = "tcp"
@@ -127,6 +136,7 @@ resource "aws_security_group" "instance_sg" {
 
   # Logstash API
   ingress {
+    description = "Logstash"
     from_port   = 9600
     to_port     = 9600
     protocol    = "tcp"
