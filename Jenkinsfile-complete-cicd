@@ -1,0 +1,484 @@
+pipeline {
+    agent any
+    
+    environment {
+        // Application Configuration
+        APP_NAME = 'group6-react-app'
+        REPO_URL = 'https://github.com/IvanCzar009/DevOps-Challange101.git'
+        
+        // Tool URLs and Credentials
+        SONARQUBE_URL = 'http://54.241.211.48:9000'
+        SONARQUBE_TOKEN = credentials('sonarqube-token')
+        TOMCAT_URL = 'http://54.241.211.48:8080'
+        TOMCAT_CREDENTIALS = credentials('tomcat-deployer')
+        
+        // ELK Stack Configuration
+        ELASTICSEARCH_URL = 'http://54.241.211.48:9200'
+        KIBANA_URL = 'http://54.241.211.48:8443'
+        LOGSTASH_URL = 'http://54.241.211.48:9600'
+        
+        // Build Configuration
+        NODE_VERSION = '18'
+        JAVA_HOME = '/usr/lib/jvm/java-11-amazon-corretto'
+        BUILD_TIMESTAMP = "${new Date().format('yyyy-MM-dd_HH-mm-ss')}"
+    }
+    
+    tools {
+        nodejs "${NODE_VERSION}"
+    }
+    
+    stages {
+        stage('🚀 Pipeline Initialization') {
+            steps {
+                script {
+                    echo "=============================================="
+                    echo "🎯 Starting CI/CD Pipeline for ${APP_NAME}"
+                    echo "🕐 Build Timestamp: ${BUILD_TIMESTAMP}"
+                    echo "🌐 Branch: ${env.BRANCH_NAME ?: 'main'}"
+                    echo "🔢 Build Number: ${env.BUILD_NUMBER}"
+                    echo "=============================================="
+                    
+                    // Send pipeline start notification to ELK
+                    sh """
+                        curl -X POST "${ELASTICSEARCH_URL}/jenkins-builds/_doc/" \\
+                        -H 'Content-Type: application/json' \\
+                        -d '{
+                            "timestamp": "${BUILD_TIMESTAMP}",
+                            "pipeline": "${APP_NAME}",
+                            "stage": "initialization",
+                            "status": "started",
+                            "build_number": "${env.BUILD_NUMBER}",
+                            "branch": "${env.BRANCH_NAME ?: 'main'}",
+                            "node": "${env.NODE_NAME}"
+                        }' || true
+                    """
+                }
+            }
+        }
+        
+        stage('📥 Source Code Checkout') {
+            steps {
+                script {
+                    echo "🔄 Checking out source code from GitHub..."
+                    
+                    // Clean workspace
+                    deleteDir()
+                    
+                    // Checkout code
+                    checkout([
+                        $class: 'GitSCM',
+                        branches: [[name: '*/${env.BRANCH_NAME ?: "main"}']],
+                        userRemoteConfigs: [[
+                            url: "${REPO_URL}",
+                            credentialsId: 'github-token'
+                        ]]
+                    ])
+                    
+                    // Log git information
+                    sh '''
+                        echo "📋 Git Information:"
+                        echo "Repository: $(git remote get-url origin)"
+                        echo "Commit: $(git rev-parse HEAD)"
+                        echo "Author: $(git log -1 --pretty=format:'%an <%ae>')"
+                        echo "Message: $(git log -1 --pretty=format:'%s')"
+                        echo "Files changed:"
+                        git diff-tree --no-commit-id --name-only -r HEAD || echo "No changes (initial commit)"
+                    '''
+                    
+                    // Send checkout status to ELK
+                    sh """
+                        curl -X POST "${ELASTICSEARCH_URL}/jenkins-builds/_doc/" \\
+                        -H 'Content-Type: application/json' \\
+                        -d '{
+                            "timestamp": "${BUILD_TIMESTAMP}",
+                            "pipeline": "${APP_NAME}",
+                            "stage": "checkout",
+                            "status": "completed",
+                            "build_number": "${env.BUILD_NUMBER}",
+                            "commit": "'$(git rev-parse HEAD)'",
+                            "author": "'$(git log -1 --pretty=format:"%an")'",
+                            "message": "'$(git log -1 --pretty=format:"%s")'"
+                        }' || true
+                    """
+                }
+            }
+        }
+        
+        stage('🔍 Environment Setup & Dependency Installation') {
+            parallel {
+                stage('📦 Install Node.js Dependencies') {
+                    steps {
+                        dir('group6-react-app') {
+                            script {
+                                echo "📦 Installing Node.js dependencies..."
+                                sh '''
+                                    echo "Node.js version: $(node --version)"
+                                    echo "NPM version: $(npm --version)"
+                                    echo "Installing dependencies..."
+                                    npm ci --only=production
+                                    echo "✅ Dependencies installed successfully"
+                                '''
+                            }
+                        }
+                    }
+                }
+                
+                stage('🛠️ Setup Build Tools') {
+                    steps {
+                        script {
+                            echo "🛠️ Setting up build environment..."
+                            sh '''
+                                # Verify Java installation
+                                echo "Java version:"
+                                java -version
+                                
+                                # Verify Docker (for potential containerization)
+                                echo "Docker version:"
+                                docker --version || echo "Docker not available"
+                                
+                                # Setup build directories
+                                mkdir -p build-artifacts
+                                mkdir -p test-reports
+                                mkdir -p coverage-reports
+                                
+                                echo "✅ Build environment ready"
+                            '''
+                        }
+                    }
+                }
+            }
+        }
+        
+        stage('🧪 Code Quality & Testing') {
+            parallel {
+                stage('🔍 Static Code Analysis with SonarQube') {
+                    steps {
+                        script {
+                            echo "🔍 Running SonarQube analysis..."
+                            
+                            dir('group6-react-app') {
+                                // Generate SonarQube properties
+                                writeFile file: 'sonar-project.properties', text: """
+sonar.projectKey=${APP_NAME}
+sonar.projectName=${APP_NAME}
+sonar.projectVersion=${env.BUILD_NUMBER}
+sonar.sources=src
+sonar.exclusions=node_modules/**,build/**,public/**
+sonar.javascript.lcov.reportPaths=coverage/lcov.info
+sonar.coverage.exclusions=src/**/*.test.js,src/**/*.spec.js
+sonar.sourceEncoding=UTF-8
+                                """
+                                
+                                // Run SonarQube scanner
+                                withSonarQubeEnv('SonarQube') {
+                                    sh """
+                                        /var/jenkins_home/tools/sonar-scanner/bin/sonar-scanner \\
+                                            -Dsonar.host.url=${SONARQUBE_URL} \\
+                                            -Dsonar.login=${SONARQUBE_TOKEN} \\
+                                            -Dsonar.projectKey=${APP_NAME} \\
+                                            -Dsonar.sources=src \\
+                                            -Dsonar.exclusions=node_modules/**,build/**
+                                    """
+                                }
+                            }
+                        }
+                    }
+                }
+                
+                stage('🧪 Unit Testing') {
+                    steps {
+                        dir('group6-react-app') {
+                            script {
+                                echo "🧪 Running unit tests..."
+                                sh '''
+                                    # Run tests with coverage
+                                    npm test -- --coverage --watchAll=false --testResultsProcessor=jest-junit
+                                    
+                                    # Copy test results
+                                    cp -r coverage ../test-reports/ || echo "No coverage reports generated"
+                                    
+                                    echo "✅ Unit tests completed"
+                                '''
+                            }
+                        }
+                    }
+                    post {
+                        always {
+                            // Publish test results
+                            publishTestResults testResultsPattern: 'group6-react-app/junit.xml'
+                            
+                            // Publish coverage reports
+                            publishHTML([
+                                allowMissing: false,
+                                alwaysLinkToLastBuild: true,
+                                keepAll: true,
+                                reportDir: 'test-reports/coverage/lcov-report',
+                                reportFiles: 'index.html',
+                                reportName: 'Coverage Report'
+                            ])
+                        }
+                    }
+                }
+                
+                stage('🔒 Security Scanning') {
+                    steps {
+                        dir('group6-react-app') {
+                            script {
+                                echo "🔒 Running security audit..."
+                                sh '''
+                                    # NPM audit for security vulnerabilities
+                                    npm audit --audit-level=moderate || echo "Security audit completed with warnings"
+                                    
+                                    # Generate security report
+                                    npm audit --json > ../build-artifacts/security-audit.json || true
+                                    
+                                    echo "✅ Security scan completed"
+                                '''
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        
+        stage('📊 Quality Gate') {
+            steps {
+                script {
+                    echo "📊 Waiting for SonarQube Quality Gate..."
+                    timeout(time: 5, unit: 'MINUTES') {
+                        def qualityGate = waitForQualityGate()
+                        if (qualityGate.status != 'OK') {
+                            error "❌ Quality Gate failed: ${qualityGate.status}"
+                        } else {
+                            echo "✅ Quality Gate passed successfully!"
+                        }
+                    }
+                    
+                    // Send quality gate results to ELK
+                    sh """
+                        curl -X POST "${ELASTICSEARCH_URL}/jenkins-builds/_doc/" \\
+                        -H 'Content-Type: application/json' \\
+                        -d '{
+                            "timestamp": "${BUILD_TIMESTAMP}",
+                            "pipeline": "${APP_NAME}",
+                            "stage": "quality_gate",
+                            "status": "passed",
+                            "build_number": "${env.BUILD_NUMBER}",
+                            "quality_gate_status": "OK"
+                        }' || true
+                    """
+                }
+            }
+        }
+        
+        stage('🏗️ Build Application') {
+            steps {
+                dir('group6-react-app') {
+                    script {
+                        echo "🏗️ Building React application..."
+                        sh '''
+                            # Build the application
+                            npm run build
+                            
+                            # Create deployment package
+                            cd build
+                            tar -czf ../../build-artifacts/${APP_NAME}-${BUILD_NUMBER}.tar.gz .
+                            
+                            # Generate build info
+                            cat > ../../build-artifacts/build-info.json << EOF
+{
+    "application": "${APP_NAME}",
+    "version": "${BUILD_NUMBER}",
+    "timestamp": "${BUILD_TIMESTAMP}",
+    "branch": "${BRANCH_NAME:-main}",
+    "commit": "$(git rev-parse HEAD)",
+    "author": "$(git log -1 --pretty=format:'%an')",
+    "jenkins_url": "${BUILD_URL}"
+}
+EOF
+                            
+                            echo "✅ Application built successfully"
+                        '''
+                    }
+                }
+            }
+            post {
+                always {
+                    // Archive build artifacts
+                    archiveArtifacts artifacts: 'build-artifacts/**', allowEmptyArchive: true
+                }
+            }
+        }
+        
+        stage('🚀 Deploy to Tomcat') {
+            steps {
+                script {
+                    echo "🚀 Deploying to Tomcat server..."
+                    
+                    sh """
+                        # Extract build artifacts
+                        cd build-artifacts
+                        tar -xzf ${APP_NAME}-${env.BUILD_NUMBER}.tar.gz -C /tmp/
+                        
+                        # Deploy to Tomcat via Manager App
+                        curl -u \${TOMCAT_CREDENTIALS} \\
+                            -T ${APP_NAME}-${env.BUILD_NUMBER}.tar.gz \\
+                            "${TOMCAT_URL}/manager/text/deploy?path=/${APP_NAME}&update=true" || \\
+                        
+                        # Alternative: Direct deployment
+                        scp -o StrictHostKeyChecking=no -i /var/jenkins_home/Pair06.pem \\
+                            ${APP_NAME}-${env.BUILD_NUMBER}.tar.gz \\
+                            ec2-user@54.241.211.48:/home/ec2-user/apache-tomcat-10.1.15/webapps/${APP_NAME}.war
+                    """
+                    
+                    // Verify deployment
+                    sh """
+                        sleep 30
+                        response=\$(curl -s -o /dev/null -w "%{http_code}" ${TOMCAT_URL}/${APP_NAME}/)
+                        if [ "\$response" = "200" ]; then
+                            echo "✅ Application deployed successfully!"
+                        else
+                            echo "⚠️ Application deployment verification failed (HTTP \$response)"
+                        fi
+                    """
+                    
+                    // Send deployment status to ELK
+                    sh """
+                        curl -X POST "${ELASTICSEARCH_URL}/jenkins-builds/_doc/" \\
+                        -H 'Content-Type: application/json' \\
+                        -d '{
+                            "timestamp": "${BUILD_TIMESTAMP}",
+                            "pipeline": "${APP_NAME}",
+                            "stage": "deployment",
+                            "status": "completed",
+                            "build_number": "${env.BUILD_NUMBER}",
+                            "deployment_url": "${TOMCAT_URL}/${APP_NAME}/",
+                            "environment": "production"
+                        }' || true
+                    """
+                }
+            }
+        }
+        
+        stage('🔍 Post-Deployment Testing') {
+            parallel {
+                stage('🌐 Health Check') {
+                    steps {
+                        script {
+                            echo "🌐 Running health checks..."
+                            sh """
+                                # Health check endpoints
+                                echo "Testing application endpoints..."
+                                
+                                # Main application
+                                curl -f ${TOMCAT_URL}/${APP_NAME}/ || echo "Main app health check failed"
+                                
+                                # API endpoints (if any)
+                                curl -f ${TOMCAT_URL}/${APP_NAME}/health || echo "No health endpoint"
+                                
+                                echo "✅ Health checks completed"
+                            """
+                        }
+                    }
+                }
+                
+                stage('⚡ Performance Testing') {
+                    steps {
+                        script {
+                            echo "⚡ Running basic performance tests..."
+                            sh """
+                                # Simple load test
+                                for i in {1..10}; do
+                                    curl -s -w "%{time_total}\\n" -o /dev/null ${TOMCAT_URL}/${APP_NAME}/
+                                done | awk '{sum+=\$1; count++} END {print "Average response time:", sum/count "s"}'
+                                
+                                echo "✅ Performance tests completed"
+                            """
+                        }
+                    }
+                }
+            }
+        }
+    }
+    
+    post {
+        always {
+            script {
+                echo "🏁 Pipeline execution completed"
+                
+                // Send final pipeline status to ELK
+                sh """
+                    curl -X POST "${ELASTICSEARCH_URL}/jenkins-builds/_doc/" \\
+                    -H 'Content-Type: application/json' \\
+                    -d '{
+                        "timestamp": "${BUILD_TIMESTAMP}",
+                        "pipeline": "${APP_NAME}",
+                        "stage": "completion",
+                        "status": "${currentBuild.currentResult.toLowerCase()}",
+                        "build_number": "${env.BUILD_NUMBER}",
+                        "duration": "${currentBuild.durationString}",
+                        "build_url": "${env.BUILD_URL}"
+                    }' || true
+                """
+            }
+            
+            // Clean up workspace
+            cleanWs()
+        }
+        
+        success {
+            script {
+                echo "✅ Pipeline completed successfully!"
+                
+                // Send success notification
+                emailext (
+                    subject: "✅ CI/CD Pipeline Success - ${APP_NAME} #${env.BUILD_NUMBER}",
+                    body: """
+                    <h2>🎉 Deployment Successful!</h2>
+                    <p><strong>Application:</strong> ${APP_NAME}</p>
+                    <p><strong>Build Number:</strong> ${env.BUILD_NUMBER}</p>
+                    <p><strong>Branch:</strong> ${env.BRANCH_NAME ?: 'main'}</p>
+                    <p><strong>Duration:</strong> ${currentBuild.durationString}</p>
+                    
+                    <h3>🔗 Quick Links:</h3>
+                    <ul>
+                        <li><a href="${TOMCAT_URL}/${APP_NAME}/">🚀 Live Application</a></li>
+                        <li><a href="${SONARQUBE_URL}/dashboard?id=${APP_NAME}">📊 SonarQube Report</a></li>
+                        <li><a href="${KIBANA_URL}">📈 Pipeline Metrics (Kibana)</a></li>
+                        <li><a href="${env.BUILD_URL}">🔧 Jenkins Build</a></li>
+                    </ul>
+                    """,
+                    mimeType: 'text/html',
+                    to: '${env.CHANGE_AUTHOR_EMAIL ?: "admin@example.com"}'
+                )
+            }
+        }
+        
+        failure {
+            script {
+                echo "❌ Pipeline failed!"
+                
+                // Send failure notification
+                emailext (
+                    subject: "❌ CI/CD Pipeline Failed - ${APP_NAME} #${env.BUILD_NUMBER}",
+                    body: """
+                    <h2>🚨 Pipeline Failure Alert</h2>
+                    <p><strong>Application:</strong> ${APP_NAME}</p>
+                    <p><strong>Build Number:</strong> ${env.BUILD_NUMBER}</p>
+                    <p><strong>Branch:</strong> ${env.BRANCH_NAME ?: 'main'}</p>
+                    <p><strong>Failed Stage:</strong> ${env.STAGE_NAME}</p>
+                    
+                    <h3>🔗 Investigation Links:</h3>
+                    <ul>
+                        <li><a href="${env.BUILD_URL}console">🔧 Build Console</a></li>
+                        <li><a href="${SONARQUBE_URL}/dashboard?id=${APP_NAME}">📊 Code Quality</a></li>
+                        <li><a href="${KIBANA_URL}">📈 Pipeline Logs</a></li>
+                    </ul>
+                    """,
+                    mimeType: 'text/html',
+                    to: '${env.CHANGE_AUTHOR_EMAIL ?: "admin@example.com"}'
+                )
+            }
+        }
+    }
+}

@@ -1,0 +1,365 @@
+{
+  "version": "8.10.4",
+  "objects": [
+    {
+      "id": "cicd-pipeline-overview",
+      "type": "dashboard",
+      "attributes": {
+        "title": "CI/CD Pipeline Overview - Group6 React App",
+        "description": "Complete monitoring dashboard for GitHub, Jenkins, SonarQube, Tomcat, and ELK CI/CD pipeline",
+        "panelsJSON": "[{\"gridData\":{\"x\":0,\"y\":0,\"w\":24,\"h\":15},\"panelIndex\":\"1\",\"panelRefName\":\"panel_1\"},{\"gridData\":{\"x\":24,\"y\":0,\"w\":24,\"h\":15},\"panelIndex\":\"2\",\"panelRefName\":\"panel_2\"},{\"gridData\":{\"x\":0,\"y\":15,\"w\":48,\"h\":15},\"panelIndex\":\"3\",\"panelRefName\":\"panel_3\"},{\"gridData\":{\"x\":0,\"y\":30,\"w\":24,\"h\":15},\"panelIndex\":\"4\",\"panelRefName\":\"panel_4\"},{\"gridData\":{\"x\":24,\"y\":30,\"w\":24,\"h\":15},\"panelIndex\":\"5\",\"panelRefName\":\"panel_5\"},{\"gridData\":{\"x\":0,\"y\":45,\"w\":48,\"h\":15},\"panelIndex\":\"6\",\"panelRefName\":\"panel_6\"}]",
+        "timeRestore": false,
+        "timeTo": "now",
+        "timeFrom": "now-24h",
+        "refreshInterval": {
+          "pause": false,
+          "value": 30000
+        },
+        "kibanaSavedObjectMeta": {
+          "searchSourceJSON": "{\"query\":{\"query\":\"\",\"language\":\"kuery\"},\"filter\":[]}"
+        }
+      }
+    },
+    {
+      "id": "build-success-rate",
+      "type": "lens",
+      "attributes": {
+        "title": "🎯 Build Success Rate",
+        "description": "Pipeline success/failure ratio over time",
+        "visualizationType": "lnsPie",
+        "state": {
+          "datasourceStates": {
+            "indexpattern": {
+              "layers": {
+                "layer1": {
+                  "columns": {
+                    "col1": {
+                      "label": "Build Status",
+                      "dataType": "string",
+                      "operationType": "terms",
+                      "sourceField": "status"
+                    },
+                    "col2": {
+                      "label": "Count",
+                      "dataType": "number",
+                      "operationType": "count"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "visualization": {
+            "shape": "donut",
+            "layers": [
+              {
+                "layerId": "layer1",
+                "groups": ["col1"],
+                "metric": "col2"
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "id": "pipeline-timeline",
+      "type": "lens",
+      "attributes": {
+        "title": "📊 Pipeline Execution Timeline",
+        "description": "Timeline view of all pipeline executions",
+        "visualizationType": "lnsXY",
+        "state": {
+          "datasourceStates": {
+            "indexpattern": {
+              "layers": {
+                "layer1": {
+                  "columns": {
+                    "col1": {
+                      "label": "@timestamp",
+                      "dataType": "date",
+                      "operationType": "date_histogram",
+                      "sourceField": "@timestamp",
+                      "params": {
+                        "interval": "auto"
+                      }
+                    },
+                    "col2": {
+                      "label": "Build Count",
+                      "dataType": "number",
+                      "operationType": "count"
+                    },
+                    "col3": {
+                      "label": "Success Rate",
+                      "dataType": "number",
+                      "operationType": "formula",
+                      "params": {
+                        "formula": "count(kql='status: completed') / count() * 100"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "visualization": {
+            "layers": [
+              {
+                "layerId": "layer1",
+                "accessors": ["col2", "col3"],
+                "position": "top",
+                "seriesType": "bar",
+                "showGridlines": false,
+                "xAccessor": "col1"
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "id": "stage-performance",
+      "type": "lens",
+      "attributes": {
+        "title": "⚡ Stage Performance Metrics",
+        "description": "Performance breakdown by pipeline stage",
+        "visualizationType": "lnsXY",
+        "state": {
+          "datasourceStates": {
+            "indexpattern": {
+              "layers": {
+                "layer1": {
+                  "columns": {
+                    "col1": {
+                      "label": "Pipeline Stage",
+                      "dataType": "string",
+                      "operationType": "terms",
+                      "sourceField": "stage"
+                    },
+                    "col2": {
+                      "label": "Average Duration",
+                      "dataType": "number",
+                      "operationType": "average",
+                      "sourceField": "duration"
+                    },
+                    "col3": {
+                      "label": "Success Count",
+                      "dataType": "number",
+                      "operationType": "count",
+                      "filter": {
+                        "query": "status: completed",
+                        "language": "kuery"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "visualization": {
+            "layers": [
+              {
+                "layerId": "layer1",
+                "accessors": ["col2", "col3"],
+                "position": "top",
+                "seriesType": "bar",
+                "showGridlines": true,
+                "xAccessor": "col1"
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "id": "quality-metrics",
+      "type": "lens",
+      "attributes": {
+        "title": "🔍 Code Quality Trends",
+        "description": "SonarQube quality metrics over time",
+        "visualizationType": "lnsXY",
+        "state": {
+          "datasourceStates": {
+            "indexpattern": {
+              "layers": {
+                "layer1": {
+                  "columns": {
+                    "col1": {
+                      "label": "@timestamp",
+                      "dataType": "date",
+                      "operationType": "date_histogram",
+                      "sourceField": "@timestamp"
+                    },
+                    "col2": {
+                      "label": "Quality Gate Passed",
+                      "dataType": "number",
+                      "operationType": "count",
+                      "filter": {
+                        "query": "quality_gate_status: OK",
+                        "language": "kuery"
+                      }
+                    },
+                    "col3": {
+                      "label": "Quality Gate Failed",
+                      "dataType": "number",
+                      "operationType": "count",
+                      "filter": {
+                        "query": "quality_gate_status: ERROR",
+                        "language": "kuery"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "visualization": {
+            "layers": [
+              {
+                "layerId": "layer1",
+                "accessors": ["col2", "col3"],
+                "position": "top",
+                "seriesType": "line",
+                "xAccessor": "col1"
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "id": "deployment-status",
+      "type": "lens",
+      "attributes": {
+        "title": "🚀 Deployment Status",
+        "description": "Tomcat deployment success/failure tracking",
+        "visualizationType": "lnsMetric",
+        "state": {
+          "datasourceStates": {
+            "indexpattern": {
+              "layers": {
+                "layer1": {
+                  "columns": {
+                    "col1": {
+                      "label": "Successful Deployments",
+                      "dataType": "number",
+                      "operationType": "count",
+                      "filter": {
+                        "query": "stage: deployment AND status: completed",
+                        "language": "kuery"
+                      }
+                    },
+                    "col2": {
+                      "label": "Failed Deployments",
+                      "dataType": "number",
+                      "operationType": "count",
+                      "filter": {
+                        "query": "stage: deployment AND status: failed",
+                        "language": "kuery"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "visualization": {
+            "layerId": "layer1",
+            "accessor": "col1",
+            "layerType": "data"
+          }
+        }
+      }
+    },
+    {
+      "id": "recent-builds-table",
+      "type": "lens",
+      "attributes": {
+        "title": "📋 Recent Pipeline Executions",
+        "description": "Latest 20 pipeline builds with details",
+        "visualizationType": "lnsDatatable",
+        "state": {
+          "datasourceStates": {
+            "indexpattern": {
+              "layers": {
+                "layer1": {
+                  "columns": {
+                    "col1": {
+                      "label": "Timestamp",
+                      "dataType": "date",
+                      "operationType": "date_histogram",
+                      "sourceField": "@timestamp"
+                    },
+                    "col2": {
+                      "label": "Build #",
+                      "dataType": "string",
+                      "operationType": "terms",
+                      "sourceField": "build_number"
+                    },
+                    "col3": {
+                      "label": "Branch",
+                      "dataType": "string",
+                      "operationType": "terms",
+                      "sourceField": "branch"
+                    },
+                    "col4": {
+                      "label": "Stage",
+                      "dataType": "string",
+                      "operationType": "terms",
+                      "sourceField": "stage"
+                    },
+                    "col5": {
+                      "label": "Status",
+                      "dataType": "string",
+                      "operationType": "terms",
+                      "sourceField": "status"
+                    },
+                    "col6": {
+                      "label": "Author",
+                      "dataType": "string",
+                      "operationType": "terms",
+                      "sourceField": "author"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "visualization": {
+            "layers": [
+              {
+                "layerId": "layer1",
+                "columns": [
+                  {
+                    "columnId": "col1",
+                    "width": 150
+                  },
+                  {
+                    "columnId": "col2",
+                    "width": 80
+                  },
+                  {
+                    "columnId": "col3",
+                    "width": 100
+                  },
+                  {
+                    "columnId": "col4",
+                    "width": 120
+                  },
+                  {
+                    "columnId": "col5",
+                    "width": 100
+                  },
+                  {
+                    "columnId": "col6",
+                    "width": 150
+                  }
+                ]
+              }
+            ]
+          }
+        }
+      }
+    }
+  ]
+}
